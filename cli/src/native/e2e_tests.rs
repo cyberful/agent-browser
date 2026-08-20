@@ -2419,6 +2419,34 @@ async fn e2e_state_management() {
 #[tokio::test]
 #[ignore]
 async fn e2e_save_state_cross_domain() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("cross-origin fixture should bind loopback");
+    let port = listener
+        .local_addr()
+        .expect("cross-origin fixture should have an address")
+        .port();
+    let fixture = tokio::spawn(async move {
+        loop {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let mut request = vec![0u8; 8192];
+                let _ = stream.read(&mut request).await;
+                let body = "<!doctype html><title>cross-origin state fixture</title>";
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body,
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.shutdown().await;
+            });
+        }
+    });
+    let origin_a = format!("http://127.0.0.1:{port}");
+    let origin_b = format!("http://localhost:{port}");
     let mut state = DaemonState::new();
 
     // Launch
@@ -2429,9 +2457,10 @@ async fn e2e_save_state_cross_domain() {
     .await;
     assert_success(&resp);
 
-    // Navigate to domain A and set cookie + localStorage
+    // Exercise distinct loopback hosts so cookie and localStorage capture stay
+    // cross-origin without relying on public DNS or third-party availability.
     let resp = execute_command(
-        &json!({ "id": "2", "action": "navigate", "url": "https://httpbin.org/html" }),
+        &json!({ "id": "2", "action": "navigate", "url": format!("{origin_a}/domain-a") }),
         &mut state,
     )
     .await;
@@ -2440,7 +2469,7 @@ async fn e2e_save_state_cross_domain() {
     let resp = execute_command(
         &json!({
             "id": "3", "action": "cookies_set",
-            "name": "domainA_cookie", "value": "from_httpbin"
+            "name": "domainA_cookie", "value": "from_origin_a"
         }),
         &mut state,
     )
@@ -2457,9 +2486,8 @@ async fn e2e_save_state_cross_domain() {
     .await;
     assert_success(&resp);
 
-    // Navigate to domain B and set cookie + localStorage
     let resp = execute_command(
-        &json!({ "id": "5", "action": "navigate", "url": "https://example.com" }),
+        &json!({ "id": "5", "action": "navigate", "url": format!("{origin_b}/domain-b") }),
         &mut state,
     )
     .await;
@@ -2468,7 +2496,7 @@ async fn e2e_save_state_cross_domain() {
     let resp = execute_command(
         &json!({
             "id": "6", "action": "cookies_set",
-            "name": "domainB_cookie", "value": "from_example"
+            "name": "domainB_cookie", "value": "from_origin_b"
         }),
         &mut state,
     )
@@ -2485,7 +2513,7 @@ async fn e2e_save_state_cross_domain() {
     .await;
     assert_success(&resp);
 
-    // Save state (currently on example.com)
+    // Save state while the second origin is active.
     let tmp_state = std::env::temp_dir()
         .join("agent-browser-e2e-cross-domain-state.json")
         .to_string_lossy()
@@ -2501,43 +2529,43 @@ async fn e2e_save_state_cross_domain() {
     let saved = std::fs::read_to_string(&tmp_state).expect("State file should exist");
     let state_data: serde_json::Value = serde_json::from_str(&saved).unwrap();
 
-    // Verify BOTH domain cookies are present
+    // Verify both host-scoped cookie sets are present.
     let cookies = state_data["cookies"].as_array().unwrap();
     let has_domain_a = cookies.iter().any(|c| c["name"] == "domainA_cookie");
     let has_domain_b = cookies.iter().any(|c| c["name"] == "domainB_cookie");
     assert!(
         has_domain_a,
-        "Should include cross-domain cookie from httpbin.org: {:?}",
+        "Should include cookie from first loopback origin: {:?}",
         cookies
     );
     assert!(
         has_domain_b,
-        "Should include cookie from example.com: {:?}",
+        "Should include cookie from second loopback origin: {:?}",
         cookies
     );
 
-    // Verify BOTH origins' localStorage are present
+    // Verify both origins' localStorage are present.
     let origins = state_data["origins"].as_array().unwrap();
     let has_origin_a = origins.iter().any(|o| {
-        o["origin"].as_str().is_some_and(|s| s.contains("httpbin"))
+        o["origin"].as_str() == Some(origin_a.as_str())
             && o["localStorage"]
                 .as_array()
                 .is_some_and(|ls| ls.iter().any(|e| e["name"] == "domainA_key"))
     });
     let has_origin_b = origins.iter().any(|o| {
-        o["origin"].as_str().is_some_and(|s| s.contains("example"))
+        o["origin"].as_str() == Some(origin_b.as_str())
             && o["localStorage"]
                 .as_array()
                 .is_some_and(|ls| ls.iter().any(|e| e["name"] == "domainB_key"))
     });
     assert!(
         has_origin_a,
-        "Should include localStorage from httpbin.org origin: {:?}",
+        "Should include localStorage from first loopback origin: {:?}",
         origins
     );
     assert!(
         has_origin_b,
-        "Should include localStorage from example.com origin: {:?}",
+        "Should include localStorage from second loopback origin: {:?}",
         origins
     );
 
@@ -2546,6 +2574,7 @@ async fn e2e_save_state_cross_domain() {
 
     let resp = execute_command(&json!({ "id": "99", "action": "close" }), &mut state).await;
     assert_success(&resp);
+    fixture.abort();
 }
 
 // ---------------------------------------------------------------------------
