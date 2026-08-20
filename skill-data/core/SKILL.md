@@ -432,6 +432,8 @@ EOF
 
 **Authentication expires mid-workflow** Use `--session <id> --restore` so your session survives browser restarts. Check `agent-browser session info --json` if restore fails. See [references/session-management.md](references/session-management.md) and [references/authentication.md](references/authentication.md).
 
+**Login provider rejects the browser as insecure** In the Cyberful hardened build, open the persistent profile with `AGENT_BROWSER_HEADED=1 AGENT_BROWSER_PASSIVE=1 agent-browser open`, complete login in the visible browser, close it, then relaunch the same profile without `AGENT_BROWSER_PASSIVE`. Passive mode intentionally exposes no page tools. See [references/authentication.md](references/authentication.md).
+
 ## Global flags worth knowing
 
 ```bash

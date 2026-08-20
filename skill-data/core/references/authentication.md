@@ -99,6 +99,16 @@ export AGENT_BROWSER_PROFILE=~/.myapp-profile
 agent-browser open https://app.example.com/dashboard
 ```
 
+For a site that rejects automation-controlled login browsers, the Cyberful hardened build supports a passive headed session:
+
+```bash
+AGENT_BROWSER_HEADED=1 AGENT_BROWSER_PASSIVE=1 \
+  AGENT_BROWSER_PROFILE=~/.myapp-profile \
+  agent-browser open
+```
+
+Complete login manually, close the passive session, and relaunch the same profile without `AGENT_BROWSER_PASSIVE` before issuing page commands. Passive mode deliberately does not attach to tabs and is incompatible with remote CDP, providers, authenticated proxies, and allowed-domain interception.
+
 ## Session Persistence
 
 Use `--restore` with a stable `--session` to auto-save and restore cookies + localStorage without managing files:

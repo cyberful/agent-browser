@@ -163,10 +163,6 @@ async fn collect_storage_in_target(
     client
         .send_command_no_params("Page.enable", Some(temp_session))
         .await?;
-    client
-        .send_command_no_params("Runtime.enable", Some(temp_session))
-        .await?;
-
     // Blank HTML response body, pre-encoded to avoid repeated base64 work per request
     let blank_html_b64 = base64::engine::general_purpose::STANDARD.encode("<html></html>");
 

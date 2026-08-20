@@ -1,6 +1,6 @@
 {
   "name": "agent-browser",
-  "version": "0.34.0",
+  "version": "0.34.0-cyberful.1",
   "description": "Browser automation CLI for AI agents",
   "type": "module",
   "packageManager": "pnpm@11.1.3",
@@ -44,11 +44,11 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vercel-labs/agent-browser.git"
+    "url": "git+https://github.com/cyberful/agent-browser.git"
   },
   "bugs": {
-    "url": "https://github.com/vercel-labs/agent-browser/issues"
+    "url": "https://github.com/cyberful/agent-browser/issues"
   },
-  "homepage": "https://agent-browser.dev",
+  "homepage": "https://github.com/cyberful/agent-browser",
   "devDependencies": {}
 }

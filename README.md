@@ -594,6 +594,7 @@ agent-browser provides multiple ways to persist login sessions so you don't re-a
 |----------|----------|------------|
 | **Chrome profile reuse** | Reuse your existing Chrome login state (cookies, sessions) with zero setup | `--profile <name>` / `AGENT_BROWSER_PROFILE` |
 | **Persistent profile** | Full browser state (cookies, IndexedDB, service workers, cache) across restarts | `--profile <path>` / `AGENT_BROWSER_PROFILE` |
+| **Human login** | Open a persistent profile without attaching DevTools to page targets | `AGENT_BROWSER_PASSIVE=1` with `AGENT_BROWSER_HEADED=1` |
 | **Session persistence** | Auto-save/restore cookies + localStorage from a stable session key | `--session <id> --restore` / `AGENT_BROWSER_RESTORE` |
 | **Import from your browser** | Grab auth from a Chrome session you already logged into | `--auto-connect` + `state save` |
 | **State file** | Load a previously saved state JSON on launch | `--state <path>` / `AGENT_BROWSER_STATE` |
@@ -732,6 +733,16 @@ The profile directory stores:
 - Service workers
 - Browser cache
 - Login sessions
+
+For login pages that reject automation-controlled browsers, use the Cyberful hardened build's passive human-login mode. It launches headed Chrome and keeps process lifecycle ownership, but does not create, attach, navigate, inspect, or reset page targets:
+
+```bash
+AGENT_BROWSER_HEADED=1 AGENT_BROWSER_PASSIVE=1 \
+  AGENT_BROWSER_PROFILE=~/.myapp-profile \
+  agent-browser open
+```
+
+Complete the login in the visible window, then close that session and relaunch without `AGENT_BROWSER_PASSIVE` for automation. Passive mode is local-Chrome only and intentionally rejects remote providers, CDP attachment, authenticated proxies, and allowed-domain interception.
 
 **Tip**: Use different profile paths for different projects to keep their browser state isolated.
 
@@ -986,6 +997,8 @@ This is useful for multimodal AI models that can reason about visual layout, unl
 | `-q`, `--quiet` | Show only AI text responses, hide tool calls (chat) |
 | `--config <path>` | Use a custom config file (or `AGENT_BROWSER_CONFIG` env) |
 | `--debug` | Debug output |
+
+`AGENT_BROWSER_PASSIVE=1` is an environment-only integration mode for headed human login. It deliberately exposes no page automation surface while active.
 
 ## Observability Dashboard
 

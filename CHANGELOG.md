@@ -1,8 +1,21 @@
 # agent-browser
 
-## 0.34.0
+## 0.34.0-cyberful.1
 
 <!-- release:start -->
+### Cyberful Hardening
+
+- Added **passive human-login mode** through `AGENT_BROWSER_PASSIVE=1`. Headed local Chrome remains owned by the daemon for lifecycle cleanup but agent-browser does not create, attach, navigate, inspect, or reset page targets.
+- Removed **detectable Runtime domain activation** from page, iframe, provider-page, and temporary storage targets. Console and uncaught page-error history now return an explicit unsupported error in this hardened build.
+- Hardened **Chrome launch behavior** by avoiding a zero-valued debugging port for passive login, suppressing the AutomationControlled Blink feature, and removing automation-specific default flags that diverge from a normal Chrome launch.
+
+### Contributors
+
+- @cyberful
+<!-- release:end -->
+
+## 0.34.0
+
 ### New Features
 
 - Added **persistent session-to-tab binding for shared Chrome sessions**. Named sessions connected through `--cdp` or `--auto-connect` now remember their CDP target across commands and daemon restarts, and CDP target ids can be used directly as tab references. Start each session with `--pin-tab` to make the binding strict, so a tab closed externally returns a stable `tab_gone` error instead of silently adopting a neighboring tab. JSON output includes `data.targetId` and an optional sanitized `data.lastUrl`; batch exposes the same recovery data under `result` (#1589)
@@ -23,7 +36,6 @@
 - @soichisumi
 - @dandaka
 - @mvanhorn
-<!-- release:end -->
 
 ## 0.33.2
 

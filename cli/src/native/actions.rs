@@ -3140,9 +3140,6 @@ async fn prepare_auto_attached_session(client: &CdpClient, session_id: &str) -> 
         .send_command_no_params("Page.enable", Some(session_id))
         .await?;
     client
-        .send_command_no_params("Runtime.enable", Some(session_id))
-        .await?;
-    client
         .send_command_no_params("Network.enable", Some(session_id))
         .await?;
     let _ = client
@@ -3310,6 +3307,7 @@ async fn auto_launch(
     plugins: Vec<crate::plugins::PluginConfig>,
 ) -> Result<(), String> {
     let mut options = launch_options_from_env();
+    let passive = options.passive;
     state.plugin_init_scripts.clear();
 
     // Use the stream server's viewport dimensions for --window-size so the
@@ -3330,6 +3328,14 @@ async fn auto_launch(
 
     // Store proxy credentials for Fetch.authRequired handling
     let has_proxy_auth = options.proxy_username.is_some();
+    if passive && has_proxy_auth {
+        return Err("Passive human-login mode does not support an authenticated proxy".to_string());
+    }
+    if passive && !allowed_domains.is_empty() {
+        return Err(
+            "Passive human-login mode does not support allowed-domain interception".to_string(),
+        );
+    }
     if has_proxy_auth {
         let mut creds = state.proxy_credentials.write().await;
         *creds = Some((
@@ -3529,13 +3535,16 @@ async fn auto_launch(
         &enable_features,
         &init_script_paths,
         engine.as_deref(),
-        "local",
+        if passive { "local-passive" } else { "local" },
         None,
     );
     let mgr = BrowserManager::launch(options, engine.as_deref()).await?;
     state.reset_input_state();
     state.browser = Some(mgr);
     state.launch_hash = Some(hash);
+    if passive {
+        return Ok(());
+    }
     state.subscribe_to_browser_events();
     state.start_fetch_handler();
     state.start_dialog_handler();
@@ -3693,6 +3702,7 @@ fn launch_options_from_env() -> LaunchOptions {
 
     LaunchOptions {
         headless: !headed,
+        passive: passive_from_env(),
         executable_path: env::var("AGENT_BROWSER_EXECUTABLE_PATH").ok(),
         proxy: env::var("AGENT_BROWSER_PROXY").ok(),
         proxy_bypass: env::var("AGENT_BROWSER_PROXY_BYPASS").ok(),
@@ -3742,6 +3752,12 @@ fn hide_scrollbars_from_launch_cmd(cmd: &Value) -> bool {
 
 fn headed_from_env() -> bool {
     env::var("AGENT_BROWSER_HEADED")
+        .map(|v| v == "1" || v == "true")
+        .unwrap_or(false)
+}
+
+fn passive_from_env() -> bool {
+    env::var("AGENT_BROWSER_PASSIVE")
         .map(|v| v == "1" || v == "true")
         .unwrap_or(false)
 }
@@ -4061,6 +4077,7 @@ async fn handle_launch(cmd: &Value, state: &mut DaemonState) -> Result<Value, St
         .get("headless")
         .and_then(|v| v.as_bool())
         .unwrap_or_else(|| !headed_from_env());
+    let passive = passive_from_env();
     let cdp_url = cmd.get("cdpUrl").and_then(|v| v.as_str());
     let cdp_port = cmd.get("cdpPort").and_then(|v| v.as_u64());
     let auto_connect = cmd
@@ -4127,6 +4144,7 @@ async fn handle_launch(cmd: &Value, state: &mut DaemonState) -> Result<Value, St
 
     let mut launch_options = LaunchOptions {
         headless,
+        passive,
         executable_path: cmd
             .get("executablePath")
             .and_then(|v| v.as_str())
@@ -4218,6 +4236,17 @@ async fn handle_launch(cmd: &Value, state: &mut DaemonState) -> Result<Value, St
 
     let (connection_kind, connection_target) =
         launch_connection_identity(cdp_url, cdp_port, auto_connect, provider_name);
+    if passive
+        && (cdp_url.is_some() || cdp_port.is_some() || auto_connect || provider_name.is_some())
+    {
+        return Err("Passive human-login mode only supports a local Chrome launch".to_string());
+    }
+    if passive && (headless || !allowed_domains.is_empty()) {
+        return Err(
+            "Passive human-login mode requires headed Chrome without allowed-domain interception"
+                .to_string(),
+        );
+    }
     let new_hash = launch_hash(
         &launch_options,
         &allowed_domains,
@@ -4225,7 +4254,11 @@ async fn handle_launch(cmd: &Value, state: &mut DaemonState) -> Result<Value, St
         &enable_features,
         &init_script_paths,
         engine.as_deref(),
-        connection_kind,
+        if passive {
+            "local-passive"
+        } else {
+            connection_kind
+        },
         connection_target.as_deref(),
     );
 
@@ -4431,6 +4464,13 @@ async fn handle_launch(cmd: &Value, state: &mut DaemonState) -> Result<Value, St
     state.reset_input_state();
     state.browser = Some(BrowserManager::launch(launch_options, engine.as_deref()).await?);
     state.launch_hash = Some(new_hash);
+    if passive {
+        return Ok(json!({
+            "launched": true,
+            "passiveHumanLogin": true,
+            "relaunchedBrowser": had_browser_before_launch
+        }));
+    }
     state.subscribe_to_browser_events();
     state.start_fetch_handler();
     state.start_dialog_handler();
@@ -5922,13 +5962,13 @@ async fn handle_console(cmd: &Value, state: &mut DaemonState) -> Result<Value, S
         state.event_tracker.clear_console();
         Ok(json!({ "cleared": true }))
     } else {
-        let result = state.event_tracker.get_console_json();
-        Ok(result)
+        Err("Console event collection is unavailable in the Cyberful hardened build because it does not enable the detectable CDP Runtime domain".to_string())
     }
 }
 
 async fn handle_errors(state: &DaemonState) -> Result<Value, String> {
-    Ok(state.event_tracker.get_errors_json())
+    let _ = state;
+    Err("Page-error event collection is unavailable in the Cyberful hardened build because it does not enable the detectable CDP Runtime domain".to_string())
 }
 
 async fn handle_session_info(state: &DaemonState) -> Result<Value, String> {

@@ -288,6 +288,9 @@ fn maybe_start_xvfb(options: &LaunchOptions) -> Option<XvfbServer> {
 #[derive(Clone)]
 pub struct LaunchOptions {
     pub headless: bool,
+    /// Launch a headed browser for direct human interaction without attaching
+    /// to page targets. The daemon still owns the browser process lifecycle.
+    pub passive: bool,
     pub executable_path: Option<String>,
     pub proxy: Option<String>,
     pub proxy_bypass: Option<String>,
@@ -333,11 +336,7 @@ impl LaunchOptions {
     /// Extensions force headed mode because Chrome does not inject their
     /// content scripts under `--headless=new`.
     pub(crate) fn effectively_headless(&self) -> bool {
-        self.headless
-            && !self
-                .extensions
-                .as_ref()
-                .is_some_and(|exts| !exts.is_empty())
+        self.headless && self.extensions.as_ref().is_none_or(|exts| exts.is_empty())
     }
 }
 
@@ -345,6 +344,7 @@ impl Default for LaunchOptions {
     fn default() -> Self {
         Self {
             headless: true,
+            passive: false,
             executable_path: None,
             proxy: None,
             proxy_bypass: None,
@@ -404,18 +404,29 @@ fn build_chrome_args(options: &LaunchOptions) -> Result<ChromeArgs, String> {
         }
     }
 
+    let remote_debugging_port = if options.passive {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0")
+            .map_err(|e| format!("Failed to reserve a local debugging port: {}", e))?;
+        let port = listener
+            .local_addr()
+            .map_err(|e| format!("Failed to read the local debugging port: {}", e))?
+            .port();
+        drop(listener);
+        port
+    } else {
+        0
+    };
+
     let mut args = vec![
-        "--remote-debugging-port=0".to_string(),
+        format!("--remote-debugging-port={}", remote_debugging_port),
         "--no-first-run".to_string(),
         "--no-default-browser-check".to_string(),
         "--disable-background-networking".to_string(),
         "--disable-backgrounding-occluded-windows".to_string(),
-        "--disable-component-update".to_string(),
-        "--disable-default-apps".to_string(),
         "--disable-hang-monitor".to_string(),
-        "--disable-popup-blocking".to_string(),
         "--disable-prompt-on-repost".to_string(),
         "--disable-sync".to_string(),
+        "--disable-blink-features=AutomationControlled".to_string(),
         "--disable-features=Translate".to_string(),
         format!("--enable-features={}", enable_features.join(",")),
         "--metrics-recording-only".to_string(),
@@ -684,28 +695,46 @@ fn try_launch_chrome(chrome_path: &Path, options: &LaunchOptions) -> Result<Chro
     // Shared overall deadline so we don't double-wait (poll + stderr fallback).
     let deadline = std::time::Instant::now() + Duration::from_secs(30);
 
-    // Primary path: use DevToolsActivePort written into user-data-dir.
-    // This is more reliable on Windows than scraping stderr for "DevTools listening on ...",
-    // which can be missing/empty depending on how Chrome is launched.
-    let ws_url = match wait_for_devtools_active_port(&mut child, &user_data_dir, deadline) {
-        Ok(url) => url,
-        Err(primary_err) => {
-            // Fallback: scrape stderr (legacy behavior) for better diagnostics.
-            let stderr = child.stderr.take().ok_or_else(|| {
+    // A non-zero debugging port avoids Chrome's webdriver signal in passive
+    // human-login mode. Chrome reports that endpoint on stderr instead of
+    // writing DevToolsActivePort, so consume it directly for that mode.
+    let ws_url = if options.passive {
+        let stderr = child.stderr.take().ok_or_else(|| {
+            let _ = child.kill();
+            cleanup_temp_dir(&temp_user_data_dir);
+            "Failed to capture Chrome stderr".to_string()
+        })?;
+        match wait_for_ws_url_until(BufReader::new(stderr), deadline) {
+            Ok(url) => url,
+            Err(error) => {
                 let _ = child.kill();
                 cleanup_temp_dir(&temp_user_data_dir);
-                "Failed to capture Chrome stderr".to_string()
-            })?;
-            let reader = BufReader::new(stderr);
-            match wait_for_ws_url_until(reader, deadline) {
-                Ok(url) => url,
-                Err(fallback_err) => {
+                return Err(error);
+            }
+        }
+    } else {
+        // DevToolsActivePort is more reliable on Windows than scraping stderr,
+        // which can be missing depending on how Chrome is launched.
+        match wait_for_devtools_active_port(&mut child, &user_data_dir, deadline) {
+            Ok(url) => url,
+            Err(primary_err) => {
+                // Fallback: scrape stderr (legacy behavior) for better diagnostics.
+                let stderr = child.stderr.take().ok_or_else(|| {
                     let _ = child.kill();
                     cleanup_temp_dir(&temp_user_data_dir);
-                    return Err(format!(
-                        "{}\n(also tried parsing stderr) {}",
-                        primary_err, fallback_err
-                    ));
+                    "Failed to capture Chrome stderr".to_string()
+                })?;
+                let reader = BufReader::new(stderr);
+                match wait_for_ws_url_until(reader, deadline) {
+                    Ok(url) => url,
+                    Err(fallback_err) => {
+                        let _ = child.kill();
+                        cleanup_temp_dir(&temp_user_data_dir);
+                        return Err(format!(
+                            "{}\n(also tried parsing stderr) {}",
+                            primary_err, fallback_err
+                        ));
+                    }
                 }
             }
         }
@@ -1698,6 +1727,39 @@ mod tests {
         let dir = result.temp_user_data_dir.unwrap();
         assert!(dir.exists());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_build_args_hardened_automation_signals() {
+        let opts = LaunchOptions {
+            headless: false,
+            passive: true,
+            ..Default::default()
+        };
+        let result = build_chrome_args(&opts).unwrap();
+        let debugging_arg = result
+            .args
+            .iter()
+            .find(|arg| arg.starts_with("--remote-debugging-port="))
+            .expect("debugging port argument");
+        assert_ne!(debugging_arg, "--remote-debugging-port=0");
+        assert!(result
+            .args
+            .iter()
+            .any(|arg| arg == "--disable-blink-features=AutomationControlled"));
+        for leaked_flag in [
+            "--disable-component-update",
+            "--disable-default-apps",
+            "--disable-popup-blocking",
+        ] {
+            assert!(
+                !result.args.iter().any(|arg| arg == leaked_flag),
+                "{leaked_flag} should not be injected by the hardened build"
+            );
+        }
+        if let Some(ref dir) = result.temp_user_data_dir {
+            let _ = std::fs::remove_dir_all(dir);
+        }
     }
 
     #[test]

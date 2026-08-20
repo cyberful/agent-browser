@@ -103,6 +103,18 @@ The profile directory stores:
 - Browser cache
 - Login sessions
 
+### Passive human login
+
+The Cyberful hardened build can open a persistent profile for direct human login without attaching DevTools to any page target:
+
+```bash
+AGENT_BROWSER_HEADED=1 AGENT_BROWSER_PASSIVE=1 \
+  AGENT_BROWSER_PROFILE=~/.myapp-profile \
+  agent-browser open
+```
+
+The daemon owns the Chrome process so `close` and process-tree cleanup still work, but it does not create, navigate, reset, inspect, or subscribe to tabs. Complete login in the visible browser, close the passive session, then relaunch without `AGENT_BROWSER_PASSIVE` to automate the authenticated profile. Passive mode accepts only local headed Chrome and rejects remote CDP, providers, authenticated proxies, and allowed-domain interception.
+
 ## Import auth from your browser
 
 If you are already logged in to a site in Chrome, you can grab that auth state and reuse it in agent-browser. This is the fastest way to bypass login flows, OAuth, SSO, or 2FA.

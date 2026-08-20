@@ -409,6 +409,9 @@ pub struct BrowserManager {
     /// launch rules such as extension-forced headed mode. Meaningless for
     /// attached browsers (browser_process is None).
     headless: bool,
+    /// A human-login browser is process-owned but has no page-level CDP
+    /// attachment. Page commands remain unavailable until a normal launch.
+    passive: bool,
 }
 
 /// Stable machine-readable prefix for "the bound tab no longer exists"
@@ -447,6 +450,13 @@ impl BrowserManager {
     pub async fn launch(options: LaunchOptions, engine: Option<&str>) -> Result<Self, String> {
         let engine = engine.unwrap_or("chrome");
 
+        if options.passive && engine != "chrome" {
+            return Err("Passive human-login mode requires the Chrome engine".to_string());
+        }
+        if options.passive && options.effectively_headless() {
+            return Err("Passive human-login mode requires a headed browser".to_string());
+        }
+
         match engine {
             "chrome" => {
                 validate_launch_options(
@@ -474,6 +484,7 @@ impl BrowserManager {
         let color_scheme = options.color_scheme.clone();
         let download_path = options.download_path.clone();
         let headless = options.effectively_headless();
+        let passive = options.passive;
 
         let (ws_url, process) = match engine {
             "lightpanda" => {
@@ -515,44 +526,49 @@ impl BrowserManager {
                 bound_target_id: None,
                 bound_target_gone: None,
                 headless,
+                passive,
             };
-            manager.discover_and_attach_targets().await?;
+            if !manager.passive {
+                manager.discover_and_attach_targets().await?;
+            }
             manager
         };
 
-        let session_id = manager.active_session_id()?.to_string();
+        if !manager.passive {
+            let session_id = manager.active_session_id()?.to_string();
 
-        if ignore_https_errors {
-            let _ = manager
-                .client
-                .send_command(
-                    "Security.setIgnoreCertificateErrors",
-                    Some(json!({ "ignore": true })),
-                    Some(&session_id),
-                )
-                .await;
-        }
+            if ignore_https_errors {
+                let _ = manager
+                    .client
+                    .send_command(
+                        "Security.setIgnoreCertificateErrors",
+                        Some(json!({ "ignore": true })),
+                        Some(&session_id),
+                    )
+                    .await;
+            }
 
-        if let Some(ref ua) = user_agent {
-            let _ = manager
-                .client
-                .send_command(
-                    "Emulation.setUserAgentOverride",
-                    Some(json!({ "userAgent": ua })),
-                    Some(&session_id),
-                )
-                .await;
-        }
+            if let Some(ref ua) = user_agent {
+                let _ = manager
+                    .client
+                    .send_command(
+                        "Emulation.setUserAgentOverride",
+                        Some(json!({ "userAgent": ua })),
+                        Some(&session_id),
+                    )
+                    .await;
+            }
 
-        if let Some(ref scheme) = color_scheme {
-            let _ = manager
-                .client
-                .send_command(
-                    "Emulation.setEmulatedMedia",
-                    Some(json!({ "features": [{ "name": "prefers-color-scheme", "value": scheme }] })),
-                    Some(&session_id),
-                )
-                .await;
+            if let Some(ref scheme) = color_scheme {
+                let _ = manager
+                    .client
+                    .send_command(
+                        "Emulation.setEmulatedMedia",
+                        Some(json!({ "features": [{ "name": "prefers-color-scheme", "value": scheme }] })),
+                        Some(&session_id),
+                    )
+                    .await;
+            }
         }
 
         if let Some(ref path) = download_path {
@@ -609,6 +625,7 @@ impl BrowserManager {
             bound_target_id: None,
             bound_target_gone: None,
             headless: true,
+            passive: false,
         };
 
         if direct_page {
@@ -797,9 +814,6 @@ impl BrowserManager {
             .send_command_no_params("Page.enable", Some(session_id))
             .await?;
         self.client
-            .send_command_no_params("Runtime.enable", Some(session_id))
-            .await?;
-        self.client
             .send_command_no_params("Network.enable", Some(session_id))
             .await?;
         // Enable auto-attach for cross-origin iframe support.
@@ -943,9 +957,6 @@ impl BrowserManager {
         self.client
             .send_command_no_params("Page.enable", None)
             .await?;
-        self.client
-            .send_command_no_params("Runtime.enable", None)
-            .await?;
         let _ = self
             .client
             .send_command_no_params("Runtime.runIfWaitingForDebugger", None)
@@ -962,6 +973,12 @@ impl BrowserManager {
             .get(self.active_page_index)
             .map(|p| p.session_id.as_str())
             .ok_or_else(|| "No active page".to_string())
+    }
+
+    /// Whether this process was launched for direct human login without page
+    /// attachment. Browser-level lifecycle commands remain available.
+    pub fn is_passive(&self) -> bool {
+        self.passive
     }
 
     // -----------------------------------------------------------------------
@@ -1347,6 +1364,11 @@ impl BrowserManager {
     pub async fn ensure_page(&mut self) -> Result<(), String> {
         if !self.pages.is_empty() {
             return Ok(());
+        }
+        if self.passive {
+            return Err(
+                "Page automation is unavailable during passive human-login mode".to_string(),
+            );
         }
         // A pinned session in the tab_gone state must not get a fresh blank
         // tab: creating one binds it and clears tab_gone, silently recovering
@@ -2285,6 +2307,7 @@ async fn initialize_lightpanda_manager(
             bound_target_id: None,
             bound_target_gone: None,
             headless: true,
+            passive: false,
         };
 
         match discover_and_attach_lightpanda_targets(&mut manager, deadline).await {
@@ -2974,11 +2997,23 @@ mod tests {
             bound_target_id: None,
             bound_target_gone: None,
             headless: true,
+            passive: false,
         }
     }
 
     const TARGET_A: &str = "AAAA0000BBBB1111CCCC2222DDDD3333";
     const TARGET_B: &str = "4F0A1111BBBB2222CCCC3333DDDD4444";
+
+    #[tokio::test]
+    async fn test_passive_login_never_creates_blank_page() {
+        let mut manager = test_manager(Vec::new()).await;
+        manager.passive = true;
+
+        let error = manager.ensure_page().await.unwrap_err();
+
+        assert!(error.contains("passive human-login"));
+        assert!(manager.pages.is_empty());
+    }
 
     #[tokio::test]
     async fn test_restore_target_binding_selects_bound_target() {
@@ -3916,7 +3951,11 @@ mod tests {
     async fn start_mock_cdp_connect(
         targets: Vec<(&'static str, bool)>,
         revive_on_activate: bool,
-    ) -> (String, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    ) -> (
+        String,
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    ) {
         use futures_util::{SinkExt, StreamExt};
         use std::collections::HashSet;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3925,6 +3964,8 @@ mod tests {
 
         let activations = Arc::new(AtomicUsize::new(0));
         let activations_task = activations.clone();
+        let methods = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let methods_task = methods.clone();
 
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!(
@@ -3973,6 +4014,7 @@ mod tests {
                     continue;
                 };
                 let method = cmd["method"].as_str().unwrap_or("");
+                methods_task.lock().unwrap().push(method.to_string());
                 let session = cmd["sessionId"].as_str().unwrap_or("").to_string();
                 let respond = |result: Value| json!({ "id": id, "result": result }).to_string();
 
@@ -4010,7 +4052,7 @@ mod tests {
             }
         });
 
-        (url, activations)
+        (url, activations, methods)
     }
 
     /// Regression test for #1036: connecting to a browser whose first target is
@@ -4020,7 +4062,7 @@ mod tests {
     /// probes for a live renderer and makes that tab active instead.
     #[tokio::test]
     async fn test_connect_skips_discarded_first_target() {
-        let (url, activations) =
+        let (url, activations, methods) =
             start_mock_cdp_connect(vec![("DISCARDED", false), ("ALIVE", true)], false).await;
 
         let mgr = tokio::time::timeout(Duration::from_secs(15), BrowserManager::connect_cdp(&url))
@@ -4038,6 +4080,14 @@ mod tests {
             0,
             "with a live tab available, connect must not reactivate (reload/focus) any tab"
         );
+        assert!(
+            !methods
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|m| m == "Runtime.enable"),
+            "the hardened attach path must never enable the detectable Runtime domain"
+        );
     }
 
     /// Regression test for #1036: connecting to a browser with many live tabs
@@ -4052,7 +4102,7 @@ mod tests {
             "t24", "t25", "t26", "t27", "t28", "t29",
         ];
         let targets: Vec<(&'static str, bool)> = ids.iter().map(|id| (*id, true)).collect();
-        let (url, activations) = start_mock_cdp_connect(targets, false).await;
+        let (url, activations, _) = start_mock_cdp_connect(targets, false).await;
 
         let mgr = tokio::time::timeout(Duration::from_secs(5), BrowserManager::connect_cdp(&url))
             .await
@@ -4076,7 +4126,7 @@ mod tests {
     /// bounded) rather than hang, and succeed (#1036).
     #[tokio::test]
     async fn test_connect_all_discarded_revives_first_tab() {
-        let (url, activations) = start_mock_cdp_connect(vec![("ONLY", false)], true).await;
+        let (url, activations, _) = start_mock_cdp_connect(vec![("ONLY", false)], true).await;
 
         let mgr = tokio::time::timeout(Duration::from_secs(20), BrowserManager::connect_cdp(&url))
             .await
@@ -4096,7 +4146,7 @@ mod tests {
     /// revive for a bare `enable_domains` and this times out.
     #[tokio::test]
     async fn test_revive_and_enable_active_revives_discarded_bound_tab() {
-        let (url, activations) =
+        let (url, activations, _) =
             start_mock_cdp_connect(vec![("LIVE", true), ("BOUND", false)], true).await;
         let mut mgr = BrowserManager::connect_cdp(&url)
             .await
@@ -4121,7 +4171,7 @@ mod tests {
     /// with a clear error instead of hanging (#1036).
     #[tokio::test]
     async fn test_connect_all_discarded_unrevivable_fails_fast() {
-        let (url, _activations) = start_mock_cdp_connect(vec![("ONLY", false)], false).await;
+        let (url, _activations, _) = start_mock_cdp_connect(vec![("ONLY", false)], false).await;
 
         let result =
             tokio::time::timeout(Duration::from_secs(30), BrowserManager::connect_cdp(&url))
@@ -4144,7 +4194,7 @@ mod tests {
     /// fast-path probe and the concurrent join_all probes are exercised.
     #[tokio::test]
     async fn test_connect_probes_leave_no_pending_requests() {
-        let (url, _activations) = start_mock_cdp_connect(
+        let (url, _activations, _) = start_mock_cdp_connect(
             vec![("DEAD1", false), ("DEAD2", false), ("ALIVE", true)],
             false,
         )

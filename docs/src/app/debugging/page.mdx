@@ -4,6 +4,8 @@ Use debugging commands to inspect browser logs, page errors, JavaScript dialogs,
 
 ## Console and page errors
 
+The Cyberful hardened build does not enable the detectable CDP Runtime domain. Historical console and uncaught page-error collection therefore returns an explicit unsupported error. Use targeted `eval`, DOM inspection, network capture, or ZAP evidence instead.
+
 ```bash
 agent-browser console
 agent-browser console --json
