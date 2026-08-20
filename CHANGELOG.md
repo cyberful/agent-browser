@@ -1,5 +1,17 @@
 # agent-browser
 
+## 0.34.0-cyberful.2
+
+<!-- release:start -->
+### Bug Fixes
+
+- Fixed `open` without a URL launching Chrome twice when local profile or launch options were configured. The command now carries the complete launch configuration itself, avoiding a sparse second launch that closed and replaced the first browser process.
+
+### Contributors
+
+- @cyberful
+<!-- release:end -->
+
 ## 0.34.0-cyberful.1
 
 <!-- release:start -->
