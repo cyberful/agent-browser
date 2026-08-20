@@ -516,6 +516,8 @@ agent-browser skills path [name]      # Print skill directory path
 
 Serves bundled skill content that always matches the installed CLI version. AI agents use this to get current instructions rather than relying on cached copies. Set `AGENT_BROWSER_SKILLS_DIR` to override the skills directory path.
 
+Managed MCP clients whose host owns runtime configuration and process lifetime should load `core-mcp-managed`. It contains the snapshot, interaction, wait, tab, evidence, and trust-boundary workflow without CLI setup or lifecycle guidance.
+
 ### MCP Server
 
 ```bash

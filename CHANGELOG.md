@@ -1,8 +1,19 @@
 # agent-browser
 
-## 0.34.0-cyberful.2
+## 0.34.0-cyberful.3
 
 <!-- release:start -->
+### New Features
+
+- Added the versioned `core-mcp-managed` skill for MCP integrations whose host owns runtime configuration, identity isolation, authorization, routing, credentials, extensions, and process lifetime.
+
+### Contributors
+
+- @cyberful
+<!-- release:end -->
+
+## 0.34.0-cyberful.2
+
 ### Bug Fixes
 
 - Fixed `open` without a URL launching Chrome twice when local profile or launch options were configured. The command now carries the complete launch configuration itself, avoiding a sparse second launch that closed and replaced the first browser process.
@@ -10,7 +21,6 @@
 ### Contributors
 
 - @cyberful
-<!-- release:end -->
 
 ## 0.34.0-cyberful.1
 

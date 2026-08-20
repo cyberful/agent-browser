@@ -3508,6 +3508,7 @@ Start here (for AI agents):
   skills [list]                List available skills
   skills get core              Core usage guide (overview + common patterns)
   skills get core --full       Include full command reference and templates
+  skills get core-mcp-managed  Core workflow for host-managed MCP clients
   skills get <name>            Load a specialized skill (electron, slack, ...)
   skills path [name]           Print skill directory path
 

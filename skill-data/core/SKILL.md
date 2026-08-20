@@ -10,6 +10,8 @@ Fast browser automation CLI for AI agents. Chrome/Chromium via CDP, no Playwrigh
 
 Most normal web tasks (navigate, read, click, fill, extract, screenshot) are covered here. Load a specialized skill when the task falls outside browser web pages — see [When to load another skill](#when-to-load-another-skill).
 
+Managed MCP integrations whose host owns runtime configuration, identity isolation, authorization, routing, credentials, extensions, and process lifetime should load `core-mcp-managed` instead of this CLI-oriented guide.
+
 ## The core loop
 
 ```bash

@@ -491,6 +491,8 @@ mod tests {
     use super::*;
     use std::fs;
 
+    const MANAGED_MCP_SKILL: &str = include_str!("../../skill-data/core-mcp-managed/SKILL.md");
+
     fn create_test_skill(dir: &Path, name: &str, description: &str) {
         let skill_dir = dir.join(name);
         fs::create_dir_all(&skill_dir).unwrap();
@@ -618,5 +620,35 @@ mod tests {
         assert_eq!(files[0].0, "references/auth.md");
         assert_eq!(files[1].0, "references/commands.md");
         assert_eq!(files[2].0, "templates/example.sh");
+    }
+
+    #[test]
+    fn managed_mcp_skill_is_self_contained_and_host_compatible() {
+        let (name, _, hidden) = parse_frontmatter(MANAGED_MCP_SKILL).unwrap();
+        assert_eq!(name, "core-mcp-managed");
+        assert!(!hidden);
+        assert!(MANAGED_MCP_SKILL.len() <= 32_768);
+        for required in [
+            "agent_browser_snapshot",
+            "agent_browser_wait_for_selector",
+            "agent_browser_tab_new",
+            "untrusted data",
+        ] {
+            assert!(MANAGED_MCP_SKILL.contains(required), "missing {required}");
+        }
+        for conflict in [
+            "agent-browser install",
+            "agent-browser close",
+            "AGENT_BROWSER_SESSION",
+            "duckduckgo",
+            "cookies set",
+            "--provider",
+            "plugin add",
+        ] {
+            assert!(
+                !MANAGED_MCP_SKILL.to_lowercase().contains(conflict),
+                "managed MCP skill contains conflicting guidance: {conflict}"
+            );
+        }
     }
 }
