@@ -250,13 +250,14 @@ jobs:
           npm pack --ignore-scripts --pack-destination release
           ARCHIVE="release/agent-browser-${VERSION}.tgz"
           test -s "$ARCHIVE"
+          tar -tzf "$ARCHIVE" > release/manifest.txt
 
           for binary in "${BINARIES[@]}"; do
-            tar -tzf "$ARCHIVE" | grep -Fxq "package/bin/$binary"
+            grep -Fxq "package/bin/$binary" release/manifest.txt
           done
-          tar -tzf "$ARCHIVE" | grep -Fxq package/skill-data/core/SKILL.md
-          tar -tzf "$ARCHIVE" | grep -Fxq package/skills/agent-browser/SKILL.md
-          tar -tzf "$ARCHIVE" | grep -Fxq package/LICENSE
+          grep -Fxq package/skill-data/core/SKILL.md release/manifest.txt
+          grep -Fxq package/skills/agent-browser/SKILL.md release/manifest.txt
+          grep -Fxq package/LICENSE release/manifest.txt
 
       - name: Extract release notes
         shell: bash
