@@ -126,7 +126,7 @@ jobs:
         run: pnpm --filter dashboard build
 
       - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.97.1
         with:
           targets: ${{ matrix.rust_target }}
 

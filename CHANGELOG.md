@@ -7,6 +7,10 @@
 
 - Added the versioned `core-mcp-managed` skill for MCP integrations whose host owns runtime configuration, identity isolation, authorization, routing, credentials, extensions, and process lifetime.
 
+### Release Engineering
+
+- Pinned the native release toolchain to Rust 1.97.1 so Linux ARM64 GNU and musl artifacts remain reproducible with cargo-zigbuild.
+
 ### Contributors
 
 - @cyberful
