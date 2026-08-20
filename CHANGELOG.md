@@ -5,7 +5,7 @@
 <!-- release:start -->
 ### Cyberful Hardening
 
-- Added **passive human-login mode** through `AGENT_BROWSER_PASSIVE=1`. Headed local Chrome remains owned by the daemon for lifecycle cleanup but agent-browser does not create, attach, navigate, inspect, or reset page targets.
+- Added **passive human-login mode** through `AGENT_BROWSER_PASSIVE=1`. Headed local Chrome remains owned by the daemon for lifecycle cleanup but agent-browser does not create, attach, navigate, inspect, or reset page targets. Closing the owned Chrome process also ends the passive daemon so profile and socket locks do not survive a completed login session.
 - Removed **detectable Runtime domain activation** from page, iframe, provider-page, and temporary storage targets. Console and uncaught page-error history now return an explicit unsupported error in this hardened build.
 - Hardened **Chrome launch behavior** by avoiding a zero-valued debugging port for passive login, suppressing the AutomationControlled Blink feature, and removing automation-specific default flags that diverge from a normal Chrome launch.
 

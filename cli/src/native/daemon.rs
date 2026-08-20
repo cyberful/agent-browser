@@ -20,6 +20,10 @@ use super::state;
 use super::stream::{IdleActivity, StreamServer};
 use crate::connection::INTERNAL_DAEMON_SHUTDOWN_ACTION;
 
+fn should_exit_after_browser_exit(process_exited: bool, passive: bool) -> bool {
+    process_exited && passive
+}
+
 pub async fn run_daemon(session: &str) {
     let socket_dir = get_daemon_socket_dir();
     if !socket_dir.exists() {
@@ -277,13 +281,20 @@ async fn run_socket_server(
             }
             _ = drain_interval.tick() => {
                 let mut s = state.lock().await;
-                let process_exited = s
+                let (process_exited, passive) = s
                     .browser
                     .as_mut()
-                    .map(|mgr| mgr.has_process_exited())
-                    .unwrap_or(false);
+                    .map(|mgr| (mgr.has_process_exited(), mgr.is_passive()))
+                    .unwrap_or((false, false));
                 if process_exited {
                     let _ = close_current_browser(&mut s).await;
+                    // Passive mode is a foreground human-login lifecycle. Once
+                    // the user closes its owned Chrome process there is no page
+                    // automation state to preserve, so leaving the daemon alive
+                    // would retain only stale profile and socket ownership.
+                    if should_exit_after_browser_exit(process_exited, passive) {
+                        break;
+                    }
                 } else if s.browser.is_some() {
                     if let Err(error) = s.drain_cdp_events_background().await {
                         let _ = writeln!(
@@ -431,13 +442,16 @@ async fn run_socket_server(
             }
             _ = drain_interval.tick() => {
                 let mut s = state.lock().await;
-                let process_exited = s
+                let (process_exited, passive) = s
                     .browser
                     .as_mut()
-                    .map(|mgr| mgr.has_process_exited())
-                    .unwrap_or(false);
+                    .map(|mgr| (mgr.has_process_exited(), mgr.is_passive()))
+                    .unwrap_or((false, false));
                 if process_exited {
                     let _ = close_current_browser(&mut s).await;
+                    if should_exit_after_browser_exit(process_exited, passive) {
+                        break;
+                    }
                 } else if s.browser.is_some() {
                     s.drain_cdp_events_background().await;
                     maybe_autosave_restore_state(&mut s, autosave_interval_ms).await;
@@ -676,6 +690,13 @@ fn get_port_for_session(session: &str) -> u16 {
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+
+    #[test]
+    fn test_only_passive_browser_exit_ends_daemon_lifecycle() {
+        assert!(should_exit_after_browser_exit(true, true));
+        assert!(!should_exit_after_browser_exit(true, false));
+        assert!(!should_exit_after_browser_exit(false, true));
+    }
 
     #[test]
     fn test_resolve_idle_timeout_unset_applies_default() {

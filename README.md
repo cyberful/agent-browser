@@ -742,7 +742,7 @@ AGENT_BROWSER_HEADED=1 AGENT_BROWSER_PASSIVE=1 \
   agent-browser open
 ```
 
-Complete the login in the visible window, then close that session and relaunch without `AGENT_BROWSER_PASSIVE` for automation. Passive mode is local-Chrome only and intentionally rejects remote providers, CDP attachment, authenticated proxies, and allowed-domain interception.
+Complete the login in the visible window, then close Chrome and relaunch without `AGENT_BROWSER_PASSIVE` for automation. The passive daemon exits with its owned Chrome process, releasing profile and socket locks. Passive mode is local-Chrome only and intentionally rejects remote providers, CDP attachment, authenticated proxies, and allowed-domain interception.
 
 **Tip**: Use different profile paths for different projects to keep their browser state isolated.
 
@@ -998,7 +998,7 @@ This is useful for multimodal AI models that can reason about visual layout, unl
 | `--config <path>` | Use a custom config file (or `AGENT_BROWSER_CONFIG` env) |
 | `--debug` | Debug output |
 
-`AGENT_BROWSER_PASSIVE=1` is an environment-only integration mode for headed human login. It deliberately exposes no page automation surface while active.
+`AGENT_BROWSER_PASSIVE=1` is an environment-only integration mode for headed human login. It deliberately exposes no page automation surface while active and exits its daemon when the owned Chrome window closes.
 
 ## Observability Dashboard
 

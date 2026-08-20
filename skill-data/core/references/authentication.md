@@ -107,7 +107,7 @@ AGENT_BROWSER_HEADED=1 AGENT_BROWSER_PASSIVE=1 \
   agent-browser open
 ```
 
-Complete login manually, close the passive session, and relaunch the same profile without `AGENT_BROWSER_PASSIVE` before issuing page commands. Passive mode deliberately does not attach to tabs and is incompatible with remote CDP, providers, authenticated proxies, and allowed-domain interception.
+Complete login manually, close Chrome, and relaunch the same profile without `AGENT_BROWSER_PASSIVE` before issuing page commands. The passive daemon exits with the owned Chrome process so it does not retain a profile or socket lock. Passive mode deliberately does not attach to tabs and is incompatible with remote CDP, providers, authenticated proxies, and allowed-domain interception.
 
 ## Session Persistence
 
