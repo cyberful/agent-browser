@@ -97,6 +97,7 @@ impl Serialize for ScreenshotAnnotation {
 
 /// Captures a screenshot via CDP and optionally overlays numbered annotations
 /// that mirror the Node.js screenshot `annotate` mode.
+/// Creates missing parent directories for explicit output paths.
 pub async fn take_screenshot(
     client: &CdpClient,
     session_id: &str,
@@ -577,10 +578,28 @@ fn save_screenshot(
     let bytes = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, base64_data)
         .map_err(|e| format!("Failed to decode screenshot: {}", e))?;
 
+    create_screenshot_parent(&save_path)?;
+
     std::fs::write(&save_path, &bytes)
         .map_err(|e| format!("Failed to save screenshot to {}: {}", save_path, e))?;
 
     Ok(save_path)
+}
+
+fn create_screenshot_parent(save_path: &str) -> Result<(), String> {
+    if let Some(parent) = PathBuf::from(save_path)
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            format!(
+                "Failed to create screenshot directory {}: {}",
+                parent.display(),
+                e
+            )
+        })?;
+    }
+    Ok(())
 }
 
 fn round(value: f64) -> i64 {
@@ -687,5 +706,31 @@ mod tests {
         let projected = project_annotations(&annotations, None, Some((10.0, 1000.0)));
         assert_eq!(projected[0].box_.x, 15);
         assert_eq!(projected[0].box_.y, 1012);
+    }
+
+    #[test]
+    fn creates_parent_directories_for_an_explicit_screenshot_path() {
+        let temporary = tempfile::tempdir().expect("temporary directory");
+        let screenshot = temporary
+            .path()
+            .join("evidence")
+            .join("brief")
+            .join("page.png");
+
+        let saved = save_screenshot(
+            &base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"png"),
+            screenshot.to_str(),
+            "png",
+            None,
+        )
+        .expect("save nested screenshot");
+
+        assert_eq!(PathBuf::from(saved), screenshot);
+        assert_eq!(std::fs::read(screenshot).expect("saved bytes"), b"png");
+    }
+
+    #[test]
+    fn preserves_an_explicit_screenshot_filename_without_a_parent() {
+        create_screenshot_parent("page.png").expect("filename has no directory to create");
     }
 }

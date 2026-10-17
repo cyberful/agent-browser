@@ -147,6 +147,8 @@ agent-browser chat "<instruction>"    # AI chat: natural language browser contro
 agent-browser chat                    # AI chat: interactive REPL mode
 ```
 
+Explicit screenshot paths create missing parent directories before the image is written.
+
 ### Get Info
 
 ```bash

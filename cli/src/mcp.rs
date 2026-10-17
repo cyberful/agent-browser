@@ -869,7 +869,7 @@ fn tools() -> Vec<Value> {
             "Take screenshot",
             "Capture a screenshot and return the saved path. Small PNG/JPEG screenshots are also returned as image content.",
             json!({
-                "path": { "type": "string", "description": "Optional output path." },
+                "path": { "type": "string", "description": "Optional output path. Missing parent directories are created automatically." },
                 "selector": { "type": "string", "description": "Optional @ref or CSS selector to capture." },
                 "fullPage": { "type": "boolean", "default": false },
                 "annotate": { "type": "boolean", "default": false, "description": "Number visible elements in the screenshot." },

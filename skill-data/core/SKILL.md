@@ -286,6 +286,8 @@ agent-browser screenshot --full full.png        # full scroll height
 agent-browser screenshot --annotate map.png     # numbered labels + legend keyed to snapshot refs
 ```
 
+Explicit screenshot paths create missing parent directories automatically.
+
 Headless Chromium screenshots hide native scrollbars for consistent image output. Pass `--hide-scrollbars false` when launching to keep native scrollbars visible.
 
 `--annotate` is designed for multimodal models: each label `[N]` maps to ref `@eN`.
